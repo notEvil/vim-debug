@@ -29,6 +29,11 @@ Watch
 - persistence
  - may be saved to/loaded from file
 
+Demo
+====
+
+Take a look at demo.mp4. Sorry for the extra 3Mb in size
+
 Getting Started
 ===============
 
@@ -39,11 +44,12 @@ Getting Started
 - start debugger using `<leader>dr`
 - try every keymap once
 
+Notes
+=====
+
+- when pyclewn terminates on its own, you will have to call :DebugStop before calling :DebugStart again
+
 Documentation
 =============
 
 I'm not too eager to write one ;) But if you tried the plugin and feel the need to get written insights, then create an issue and I will obey.
-
-Demo
-====
-TODO
