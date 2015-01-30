@@ -29,10 +29,15 @@ Watch
 - persistence
  - may be saved to/loaded from file
 
+Console
+-------
+
+Actually, it's no interactive console in the usual sense, but an insert mode keymap where written lines are sent as if written on the command line with `C ...`. Insert mode is never closed, so you can undo everything in an instant once you are done. (reference config maps this to `<c-cr>`)
+
 Demo
 ====
 
-Take a look at demo.mp4. Sorry for the extra 3Mb in size
+Take a look at demo.mp4. Sorry for the extra 3Mb in size. I also forgot to show the 'interactive' console feature.
 
 Getting Started
 ===============
@@ -47,7 +52,7 @@ Getting Started
 Notes
 =====
 
-- when pyclewn terminates on its own, you will have to call :DebugStop before calling :DebugStart again
+- when pyclewn terminates on its own, you will have to call `:DebugStop` before calling `:DebugStart` again
 
 Documentation
 =============
