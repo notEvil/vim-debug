@@ -60,6 +60,6 @@ nnoremap <leader>de :call debug#toggleEnabled(debug#here())<cr>
 nnoremap <leader>di :DebugBpIgnore 
 " prints
 nnoremap <leader>dp :Cpp <c-r>=expand('<cword>')<cr><cr>
-xnoremap <leader>dp ""y:Cpp <c-r>=escape(@", '"')<cr><cr>
+xnoremap <c-cr> ""y:Cpp <c-r>=escape(@", '"')<cr><cr>
 inoremap <c-cr> <c-o>on<c-o>:Cpp <c-r>=getline(line('.')-1)<cr><cr><bs>
 nnoremap <leader>dw :DebugWatch 

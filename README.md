@@ -3,7 +3,7 @@ convenience layer for (py)clewn to overcome some of its drawbacks. not to be con
 
 Motivation
 ==========
-I recently tried to use pyclewn for simple python pdb debugging and was amazed how cumbersome its usage is. Just to name a few: Most of the breakpoint related functions take a number to identify the breakpoint. Then there is no watch at all. And breakpoints just vanish when the pyclewn is restarted.
+I recently tried to use pyclewn for simple python pdb debugging and was amazed how cumbersome its usage is. Just to name a few: Most of the breakpoint related functions take a number to identify the breakpoint. Then there is no watch at all. And breakpoints just vanish when pyclewn is restarted.
 
 If you don't know about vdebug, you most definitely should check it out at https://github.com/joonty/vdebug before considering this plugin ;)
 
@@ -20,6 +20,7 @@ Breakpoints
 - persistence
  - are reused the next time a debug session starts
  - may be saved to/loaded from file
+ - line position changes are dealt with
 
 Watch
 -----
@@ -58,3 +59,4 @@ Documentation
 =============
 
 I'm not too eager to write one ;) But if you tried the plugin and feel the need to get written insights, then create an issue and I will obey.
+

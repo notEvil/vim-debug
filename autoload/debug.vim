@@ -43,18 +43,70 @@ fun! s:strip(x)
   return substitute(a:x, '(^\s+)|(\s+$)', '', 'g')
 endfun
 
-
-" MAIN HELPER
-fun! s:id(file, line)
-  return a:file.':'.a:line
+fun! s:getline(file, lineNo)
+  let current = expand('%:p')
+  if a:file != current
+    let buf = bufnr('%')
+    exec 'hide view '.a:file
+  endif
+  call cursor(a:lineNo, 1)
+  while 1
+    let [l, c] = searchpos('\v\S', 'cnW')
+    let r = getline(l)
+    if strpart(r, c - 1, 1) == '#'
+      call cursor(l + 1, 1)
+      continue
+    endif
+    break
+  endwhile
+  if a:file != current
+    exec 'buffer '.buf
+  endif
+  return r
 endfun
 
-fun! s:createBp(file, line, condition, temp)
+fun! s:findline(file, lineNo, line)
+  let current = expand('%:p')
+  if a:file != current
+    let buf = bufnr('%')
+    exec 'hide view '.a:file
+  endif
+  call cursor(a:lineNo, 1)
+  let pattern = '\V\^'.escape(a:line, '\').'\$'
+  let l1 = search(pattern, 'cnW')
+  let l2 = search(pattern, 'bcnW')
+  if l1 == 0
+    if l2 == 0
+      let r = a:lineNo
+    else
+      let r = l2
+    endif
+  else
+    if l2 == 0
+      let r = l1
+    else
+      let r = abs(l1-a:lineNo) <= abs(l2-a:lineNo) ? l1 : l2
+    endif
+  endif
+  if a:file != current
+    exec 'buffer '.buf
+  endif
+  return r
+endfun
+
+
+" MAIN HELPER
+fun! s:id(file, lineNo)
+  return a:file.':'.a:lineNo
+endfun
+
+fun! s:createBp(file, lineNo, condition, temp)
   return {
-  \ 'id': s:id(a:file, a:line),
+  \ 'id': s:id(a:file, a:lineNo),
   \ 'count': g:debug#count,
   \ 'file': a:file,
-  \ 'line': a:line,
+  \ 'lineNo': a:lineNo,
+  \ 'line': s:getline(a:file, a:lineNo),
   \ 'condition': a:condition,
   \ 'temp': a:temp,
   \ 'enabled': 1
@@ -73,20 +125,21 @@ fun! s:serialize(bps, watch)
   for [file, bps] in items(byFile)
     call add(r, '0 '.file)
     for bp in bps
-      call add(r, '1 '.bp.line)
+      call add(r, '1 '.bp.lineNo)
+      call add(r, '2 '.bp.line)
       if bp.condition != ''
-        call add(r, '2 '.bp.condition)
+        call add(r, '3 '.bp.condition)
       endif
       if bp.temp
-        call add(r, '3 ')
+        call add(r, '4 ')
       endif
       if !bp.enabled
-        call add(r, '4 ')
+        call add(r, '5 ')
       endif
     endfor
   endfor
   for watch in a:watch
-    call add(r, '5 '.watch)
+    call add(r, '6 '.watch)
   endfor
   return r
 endfun
@@ -111,12 +164,14 @@ fun! s:deserialize(lines)
     elseif x == '1'
       let bp = s:createBp(file, y, '', 0)
     elseif x == '2'
-      let bp.condition = y
+      let bp.line = y
     elseif x == '3'
-      let bp.temp = 1
+      let bp.condition = y
     elseif x == '4'
-      let bp.enabled = 0
+      let bp.temp = 1
     elseif x == '5'
+      let bp.enabled = 0
+    elseif x == '6'
       call add(watch, y)
     endif
   endfor
@@ -175,8 +230,8 @@ fun! s:start(args)
   let g:debug#temps = {}
   call s:restore(bps)
   " WARN: create globals __tryeval__ and __debugprint__. might become an issue
-  call s:command("exec 'def __tryeval__(x,l,g):\\n try: return eval(x,l,g)\\n except: return \"\"'")
-  call s:command("exec 'def __debugprint__(x,l,g):\\n format=\"{{:{}}}: {{}}: {{}}\".format(len(str(len(x)-1)))\\n print \"\\\\\\n\".join(format.format(i,y,__tryeval__(y,l,g)) for i,y in enumerate(x))'")
+  call s:command("exec 'def __tryeval__(x,l,g):\\n try: return eval(x,l,g)\\n except: return \"\"\\n__builtins__[\"__tryeval__\"]=__tryeval__;del __tryeval__'")
+  call s:command("exec 'def __debugprint__(x,l,g):\\n print \"\\\\\\n\".join(\"{}: {}: {}\".format(i,y,__tryeval__(y,l,g)) for i,y in enumerate(x))\\n__builtins__[\"__debugprint__\"]=__debugprint__;del __debugprint__'")
   "too long
   "call s:command("exec 'def __debugprint__(x,l,g):\\n def tryeval(x,l,g):\\n  try: return eval(x,l,g)\\n  except: return \"\"\\n format=\"{{{}}}: {{}}: {{}}\".format(len(str(len(x)-1)))\\n print \"\\n\".join(format.format(i,y,tryeval(y,l,g)) for i,y in enumerate(x))'")
   return r
@@ -206,8 +261,8 @@ fun! s:command(command)
 endfun
 
 " main bp function
-fun! s:putThere(file, line, condition, temp)
-  let bp = debug#there(a:file, a:line)
+fun! s:putThere(file, lineNo, condition, temp)
+  let bp = debug#there(a:file, a:lineNo)
   if bp != g:debug#nobp
     if bp.temp != a:temp
       call s:remove(bp) " simply remove and put again afterwards
@@ -220,7 +275,7 @@ fun! s:putThere(file, line, condition, temp)
     call s:funNotSet('putBpF')
     return -1
   endif
-  let bp = s:createBp(a:file, a:line, a:condition, a:temp)
+  let bp = s:createBp(a:file, a:lineNo, a:condition, a:temp)
   let r = PutBpF(bp)
   call s:addBp(bp)
   return r
@@ -285,9 +340,9 @@ endfun
 
 fun! s:restore(bps)
   for bp in a:bps
-    call s:putThere(bp.file, bp.line, bp.condition, bp.temp)
+    call s:putThere(bp.file, s:findline(bp.file, bp.lineNo, bp.line), bp.condition, bp.temp)
     if !bp.enabled
-      call s:setEnabled(debug#there(bp.file, bp.line), 0)
+      call s:setEnabled(debug#there(bp.file, bp.lineNo), 0)
     endif
   endfor
 endfun
@@ -312,8 +367,8 @@ fun! debug#here()
   return debug#there(here[0], here[1])
 endfun
 
-fun! debug#there(file, line)
-  let id = s:id(a:file, a:line)
+fun! debug#there(file, lineNo)
+  let id = s:id(a:file, a:lineNo)
   if !has_key(g:debug#bps, id)
     return g:debug#nobp
   endif
@@ -325,10 +380,10 @@ fun! debug#toggleHere(temp)
   return debug#toggleThere(here[0], here[1], a:temp)
 endfun
 
-fun! debug#toggleThere(file, line, temp)
-  let bp = debug#there(a:file, a:line)
+fun! debug#toggleThere(file, lineNo, temp)
+  let bp = debug#there(a:file, a:lineNo)
   if bp == g:debug#nobp
-    return s:putThere(a:file, a:line, '', a:temp)
+    return s:putThere(a:file, a:lineNo, '', a:temp)
   endif
   return s:remove(bp)
 endfun
@@ -343,7 +398,7 @@ fun! s:parseDebugBp(arg)
   call s:putThere(t[0], t[1], join(t[3:]), t[2])
 endfun
 
-" file line temp condition...
+" file lineNo temp condition...
 command! -nargs=1 DebugBp call s:parseDebugBp(<q-args>)
 
 fun! debug#toggleEnabled(bp)
@@ -394,7 +449,7 @@ fun! debug#printWatch()
     return 0
   endif
   "let r = ["exec 'def __tryeval__(x,l,g):\\n try: return eval(x,l,g)\\n except: return \"\"';", "print '\\n'.join(['{:", float2nr(ceil(log10(len(g:debug#watch)+1))), "}: {}: {}'.format(i,x,__tryeval__(x,locals(),globals())) for i,x in enumerate(["] ", ']))']
-  let r = ['__debugprint__([']
+  let r = ['__builtins__["__debugprint__"]([']
   let i = 0
   for item in g:debug#watch
     call add(r, "'".escape(item, "'")."',")
