@@ -1,11 +1,11 @@
 # vim-debug
-convenience layer for (py)clewn to overcome some of its drawbacks. not to be confused with @jaredly's vim-debug, which is much more sophisticated ;)
+convenience layer for pyclewn to overcome some drawbacks. not to be confused with @jaredly's vim-debug, which is much more sophisticated ;)
+
+If you don't know about vdebug, you most definitely should check it out at https://github.com/joonty/vdebug before considering this plugin!
 
 Motivation
 ==========
-I recently tried to use pyclewn for simple python pdb debugging and was amazed how cumbersome its usage is. Just to name a few: Most of the breakpoint related functions take a number to identify the breakpoint. Then there is no watch at all. And breakpoints just vanish when pyclewn is restarted.
-
-If you don't know about vdebug, you most definitely should check it out at https://github.com/joonty/vdebug before considering this plugin ;)
+I tried to use pyclewn for simple python pdb debugging and I was amazed how cumbersome its usage is. Just to name a few: a breakpoint is identified by a number which you have to specify whenever you mean to edit, enable/disable or remove it. There is no way to watch variables/expressions. And breakpoints just vanish when pyclewn is restarted.
 
 Features
 ========
@@ -16,11 +16,12 @@ Breakpoints
 -----------
 
 - single breakpoint per line
-- identify breakpoint by cursor position
+- identify breakpoint by (cursor) position
+- single command to create/change/remove breakpoints
 - persistence
- - are reused the next time a debug session starts
- - may be saved to/loaded from file
- - line position changes are dealt with
+ - reuses breakpoints on debug startup
+ - you may save/load breakpoints to/from file
+ - restores breakpoints at perfectly matching lines
 
 Watch
 -----
@@ -28,17 +29,17 @@ Watch
 - add to/remove from watch (simple memory)
 - print watch on demand
 - persistence
- - may be saved to/loaded from file
+ - along with breakpoints
 
 Console
 -------
 
-Actually, it's no interactive console in the usual sense, but an insert mode keymap where written lines are sent as if written on the command line with `C ...`. Insert mode is never closed, so you can undo everything in an instant once you are done. (reference config maps this to `<c-cr>`)
+Actually, it's no interactive console in the usual sense, but an insert mode keymap that submits entire lines as if written on the command line with `C ...`. Insert mode is never closed, so you can undo everything in an instant once you are done. (reference config maps this to `<c-cr>`)
 
 Demo
 ====
 
-Take a look at demo.mp4. Sorry for the extra 3Mb in size. I also forgot to show the 'interactive' console feature.
+TODO, a lot changed since
 
 Getting Started
 ===============
@@ -58,5 +59,5 @@ Notes
 Documentation
 =============
 
-I'm not too eager to write one ;) But if you tried the plugin and feel the need to get written insights, then create an issue and I will obey.
+TODO, will be there soon :)
 
