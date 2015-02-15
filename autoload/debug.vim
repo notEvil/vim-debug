@@ -12,17 +12,56 @@ let g:debug#nobp = {}
 fun! debug#dummy() " force loading this module
 endfun
 
+fun! s:Start(args)
+  exe 'Pyclewn pdb '.escape(debug#ejoin(a:args, ' '), '"')
+  sleep 100m
+  sleep 100m
+  return 0
+endfun
+fun! s:Stop(args)
+  C import sys; sys.exit(1)
+  return 0
+endfun
+fun! s:Cmd(cmd)
+  exe 'C '.escape(a:cmd, '"')
+  return 0
+endfun
+fun! s:PutBp(bp)
+  exe 'C'.(a:bp.temp ? 't' : '').'break '.a:bp.file.':'.a:bp.lineNo.', '.a:bp.if
+  return 0
+endfun
+fun! s:RmBp(bp)
+  exe 'Cclear '.a:bp.file.':'.a:bp.lineNo
+  return 0
+endfun
+fun! s:SetBpIf(bp, if)
+  exe 'Ccondition '.a:bp.count.' '.a:if
+  return 0
+endfun
+fun! s:SetBpIgnore(bp, ignore)
+  exe 'Cignore '.a:bp.count.' '.a:ignore
+  return 0
+endfun
+fun! s:SetBpEnabled(bp, enabled)
+  exe 'C'.(a:enabled ? 'enable' : 'disable').' '.a:bp.count
+  return 0
+endfun
+fun! s:Print(x, pretty)
+  exe 'Cp'.(a:pretty ? 'p' : '').' '.a:x
+  return 0
+endfun
+
 fun! s:init()
   let g:debug#opts = extend({
-  \ 'startF': s:nofu,
-  \ 'stopF': s:nofu,
-  \ 'commandF': s:nofu,
-  \ 'putBpF': s:nofu,
-  \ 'removeBpF': s:nofu,
-  \ 'changeBpConditionF': s:nofu,
-  \ 'setBpEnabledF': s:nofu,
-  \ 'setBpIgnoreF': s:nofu,
-  \ 'printF': s:nofu
+  \ 'startF': function('s:Start'),
+  \ 'stopF': function('s:Stop'),
+  \ 'cmdF': function('s:Cmd'),
+  \ 'putBpF': function('s:PutBp'),
+  \ 'rmBpF': function('s:RmBp'),
+  \ 'setBpIfF': function('s:SetBpIf'),
+  \ 'setBpIgnoreF': function('s:SetBpIgnore'),
+  \ 'setBpEnabledF': function('s:SetBpEnabled'),
+  \ 'printF': function('s:Print')
   \ }, (exists('g:debug#opts') ? g:debug#opts : {}))
   if !exists('g:debug#bps')
     let g:debug#bps = {}
@@ -94,22 +133,43 @@ fun! s:findline(file, lineNo, line)
   return r
 endfun
 
+fun! s:parseAt(at)
+  let items = debug#esplit(a:at, ':', 1)
+  let l = len(items)
+  if l < 2
+    echoerr 'syntax error, expected file:lineNo[:line]'
+  endif
+  let file = items[0] == '' ? expand('%:p') : items[0]
+  let lineNo = items[1]
+  if 2 < l
+    let lineNo = s:findline(file, lineNo, items[1])
+  endif
+  return [file, lineNo]
+endfun
+
+fun! s:return(a, b)
+  if a:a < a:b
+    return a:a
+  endif
+  return a:b
+endfun
+
 
 " MAIN HELPER
 fun! s:id(file, lineNo)
   return a:file.':'.a:lineNo
 endfun
 
-fun! s:createBp(file, lineNo, condition, temp)
+fun! s:createBp(file, lineNo, temp, if, enabled)
   return {
   \ 'id': s:id(a:file, a:lineNo),
   \ 'count': g:debug#count,
   \ 'file': a:file,
   \ 'lineNo': a:lineNo,
   \ 'line': s:getline(a:file, a:lineNo),
-  \ 'condition': a:condition,
   \ 'temp': a:temp,
-  \ 'enabled': 1
+  \ 'if': a:if,
+  \ 'enabled': a:enabled
   \ }
 endfun
 
@@ -127,11 +187,11 @@ fun! s:serialize(bps, watch)
     for bp in bps
       call add(r, '1 '.bp.lineNo)
       call add(r, '2 '.bp.line)
-      if bp.condition != ''
-        call add(r, '3 '.bp.condition)
-      endif
       if bp.temp
-        call add(r, '4 ')
+        call add(r, '3 ')
+      endif
+      if bp.if != ''
+        call add(r, '4 '.bp.if)
       endif
       if !bp.enabled
         call add(r, '5 ')
@@ -162,13 +222,13 @@ fun! s:deserialize(lines)
     if x == '0'
       let file = y
     elseif x == '1'
-      let bp = s:createBp(file, y, '', 0)
+      let bp = s:createBp(file, y, 0, '', 1)
     elseif x == '2'
       let bp.line = y
     elseif x == '3'
-      let bp.condition = y
-    elseif x == '4'
       let bp.temp = 1
+    elseif x == '4'
+      let bp.if = y
     elseif x == '5'
       let bp.enabled = 0
     elseif x == '6'
@@ -189,7 +249,7 @@ fun! s:addBp(bp)
   endif
 endfun
 
-fun! s:removeBp(bp)
+fun! s:_removeBp(bp)
   unlet g:debug#bps[a:bp.id]
   if a:bp.temp && has_key(g:debug#temps, a:bp.id)
     unlet g:debug#temps[a:bp.id]
@@ -203,12 +263,9 @@ fun! s:clearTemps()
   let g:debug#temps = {}
 endfun
 
-fun! s:here()
-  return [expand('%:p'), line('.')]
-endfun
-
 fun! s:funNotSet(name)
   echoerr 'g:debug#opts.'.a:name.' not set yet'
+  return -1
 endfun
 
 
@@ -219,8 +276,7 @@ fun! s:start(args)
   endif
   let StartF = g:debug#opts.startF
   if StartF == s:nofu
-    call s:funNotSet('startF')
-    return -1
+    return s:funNotSet('startF')
   endif
   let r = StartF(a:args)
   let g:debug#running = 1
@@ -228,12 +284,12 @@ fun! s:start(args)
   let g:debug#bps = {}
   let g:debug#count = 1
   let g:debug#temps = {}
-  call s:restore(bps)
+  let r = s:return(r, s:restore(bps))
   " WARN: create globals __tryeval__ and __debugprint__. might become an issue
-  call s:command("exec 'def __tryeval__(x,l,g):\\n try: return eval(x,l,g)\\n except: return \"\"\\n__builtins__[\"__tryeval__\"]=__tryeval__;del __tryeval__'")
-  call s:command("exec 'def __debugprint__(x,l,g):\\n print \"\\\\\\n\".join(\"{}: {}: {}\".format(i,y,__tryeval__(y,l,g)) for i,y in enumerate(x))\\n__builtins__[\"__debugprint__\"]=__debugprint__;del __debugprint__'")
+  let r = s:return(r, s:cmd("exec 'def __tryeval__(x,l,g):\\n try: return eval(x,l,g)\\n except: return \"\"\\n__builtins__[\"__tryeval__\"]=__tryeval__;del __tryeval__'"))
+  let r = s:return(r, s:cmd("exec 'def __debugprint__(x,l,g):\\n print \"\\\\\\n\".join(\"{}: {}: {}\".format(i,y,__tryeval__(y,l,g)) for i,y in enumerate(x))\\n__builtins__[\"__debugprint__\"]=__debugprint__;del __debugprint__'"))
   "too long
-  "call s:command("exec 'def __debugprint__(x,l,g):\\n def tryeval(x,l,g):\\n  try: return eval(x,l,g)\\n  except: return \"\"\\n format=\"{{{}}}: {{}}: {{}}\".format(len(str(len(x)-1)))\\n print \"\\n\".join(format.format(i,y,tryeval(y,l,g)) for i,y in enumerate(x))'")
+  "call s:cmd("exec 'def __debugprint__(x,l,g):\\n def tryeval(x,l,g):\\n  try: return eval(x,l,g)\\n  except: return \"\"\\n format=\"{{{}}}: {{}}: {{}}\".format(len(str(len(x)-1)))\\n print \"\\n\".join(format.format(i,y,tryeval(y,l,g)) for i,y in enumerate(x))'")
   return r
 endfun
 
@@ -243,66 +299,59 @@ fun! s:stop(args)
   endif
   let StopF = g:debug#opts.stopF
   if StopF == s:nofu
-    call s:funNotSet('stopF')
-    return -1
+    return s:funNotSet('stopF')
   endif
   let r = StopF(a:args)
   let g:debug#running = 0
   return r
 endfun
 
-fun! s:command(command)
-  let CommandF = g:debug#opts.commandF
-  if CommandF == s:nofu
-    call s:funNotSet('commandF')
-    return -1
+fun! s:cmd(command)
+  let CmdF = g:debug#opts.cmdF
+  if CmdF == s:nofu
+    return s:funNotSet('cmdF')
   endif
-  return CommandF(a:command)
+  return CmdF(a:command)
 endfun
 
-" main bp function
-fun! s:putThere(file, lineNo, condition, temp)
-  let bp = debug#there(a:file, a:lineNo)
-  if bp != g:debug#nobp
-    if bp.temp != a:temp
-      call s:remove(bp) " simply remove and put again afterwards
-    else
-      return s:changeCondition(bp, a:condition) " change
-    endif
-  endif
+fun! s:putBp(bp)
   let PutBpF = g:debug#opts.putBpF
   if PutBpF == s:nofu
-    call s:funNotSet('putBpF')
-    return -1
+    return s:funNotSet('putBpF')
   endif
-  let bp = s:createBp(a:file, a:lineNo, a:condition, a:temp)
-  let r = PutBpF(bp)
-  call s:addBp(bp)
+  let r = PutBpF(a:bp)
+  call s:addBp(a:bp)
+  if !a:bp.enabled
+    let a:bp.enabled = 1
+    let r = s:return(r, s:setEnabled(a:bp, 0))
+  endif
   return r
 endfun
 
-fun! s:remove(bp)
-  let RemoveBpF = g:debug#opts.removeBpF
-  if RemoveBpF == s:nofu
-    call s:funNotSet('removeBpF')
-    return -1
+fun! s:changeBp(bp, if, enabled)
+  return s:return(s:setIf(a:bp, a:if), s:setEnabled(a:bp, a:enabled))
+endfun
+
+fun! s:removeBp(bp)
+  let RmBpF = g:debug#opts.rmBpF
+  if RmBpF == s:nofu
+    return s:funNotSet('rmBpF')
   endif
-  let r = RemoveBpF(a:bp)
-  call s:removeBp(a:bp)
+  let r = RmBpF(a:bp)
+  call s:_removeBp(a:bp)
   return r
 endfun
 
-fun! s:changeCondition(bp, condition)
-  if a:bp.condition == a:condition
+fun! s:setIf(bp, if)
+  if a:bp.if == a:if
     return 0
   endif
-  let ChangeBpConditionF = g:debug#opts.changeBpConditionF
-  if ChangeBpConditionF == s:nofu
-    call s:funNotSet('changeBpConditionF')
-    return -1
+  let SetBpIfF = g:debug#opts.setBpIfF
+  if SetBpIfF == s:nofu
+    return s:funNotSet('setBpIfF')
   endif
-  let r = ChangeBpConditionF(a:bp, a:condition)
-  let a:bp.condition = a:condition
+  let r = SetBpIfF(a:bp, a:if)
+  let a:bp.if = a:if
   return r
 endfun
 
@@ -312,8 +361,7 @@ fun! s:setEnabled(bp, enabled)
   endif
   let SetBpEnabledF = g:debug#opts.setBpEnabledF
   if SetBpEnabledF == s:nofu
-    call s:funNotSet('setBpEnabledF')
-    return -1
+    return s:funNotSet('setBpEnabledF')
   endif
   let r = SetBpEnabledF(a:bp, a:enabled)
   let a:bp.enabled = a:enabled
@@ -323,83 +371,180 @@ endfun
 fun! s:setIgnore(bp, ignore)
   let SetBpIgnoreF = g:debug#opts.setBpIgnoreF
   if SetBpIgnoreF == s:nofu
-    call s:funNotSet('setBpIgnoreF')
-    return -1
+    return s:funNotSet('setBpIgnoreF')
   endif
-  let r = SetBpIgnoreF(a:bp, a:ignore)
+  return SetBpIgnoreF(a:bp, a:ignore)
 endfun
 
 fun! s:print(x, pretty)
   let PrintF = g:debug#opts.printF
   if PrintF == s:nofu
-    call s:funNotSet('printF')
-    return -1
+    return s:funNotSet('printF')
   endif
   return PrintF(a:x, a:pretty)
 endfun
 
 fun! s:restore(bps)
+  let r = 0
   for bp in a:bps
-    call s:putThere(bp.file, s:findline(bp.file, bp.lineNo, bp.line), bp.condition, bp.temp)
-    if !bp.enabled
-      call s:setEnabled(debug#there(bp.file, bp.lineNo), 0)
-    endif
+    let r = s:return(r, s:putBp(s:createBp(bp.file, s:findline(bp.file, bp.lineNo, bp.line), bp.temp, bp.if, bp.enabled)))
   endfor
+  return r
 endfun
 
 
 " INTERFACE
+fun! debug#ejoin(items, by)
+  let r = []
+  for item in a:items
+    if stridx(item, ' ') != -1
+      call add(r, '"'.item.'"')
+    else
+      call add(r, item)
+    endif
+  endfor
+  return join(r, a:by)
+endfun
+
+fun! debug#esplit(x, by, ...)
+  let keepempty = 0 < a:0 ? a:1 : 0
+  let r = []
+  let items = split(a:x, a:by, 1) " naive split
+  let escaped = 0
+  for item in items
+    if escaped " inside escaped item
+      if match(item, '\v(^|[^\\])"$') != -1 " end of escaped item
+	let nItem .= a:by.strpart(item, 0, strlen(item)-1) " remove \" (without \)
+	call add(r, nItem)
+	let escaped = 0
+      else
+        let nItem .= a:by.item
+      endif
+    else
+      if !keepempty && strlen(item) == 0 " skip empty items
+	continue
+      endif
+      if match(item, '\v^"') != -1 " start of escaped item
+	if match(item, '\v[^\\]"') != -1 " end of escaped item
+	  call add(r, strpart(item, 1, strlen(item)-2)) " remove \" (without \)
+        else " incomplete escaped item
+	  let nItem = strpart(item, 1) " remove \" (without \)
+	  let escaped = 1
+	endif
+      else " unescaped item
+	call add(r, item)
+      endif
+    endif
+  endfor
+  if escaped " end of escaped item not found yet
+    let items = split(nItem, a:by)
+    let items[0] = '"'.items[0]
+    call extend(r, items)
+  endif
+  return r
+endfun
+
+
 fun! s:parseDebugStart(arg)
-  call s:start(split(a:arg, ' '))
+  call s:start(debug#esplit(a:arg, ' '))
 endfun
 
 command! -nargs=* DebugStart call s:parseDebugStart(<q-args>)
 
 fun! s:parseDebugStop(arg)
-  call s:stop(split(a:arg, ' '))
+  call s:stop(debug#esplit(a:arg, ' '))
 endfun
 
 command! -nargs=* DebugStop call s:parseDebugStop(<q-args>)
 
 
 fun! debug#here()
-  let here = s:here()
-  return debug#there(here[0], here[1])
+  return debug#there(expand('%:p'), line('.'))
 endfun
 
 fun! debug#there(file, lineNo)
-  let id = s:id(a:file, a:lineNo)
-  if !has_key(g:debug#bps, id)
-    return g:debug#nobp
-  endif
-  return g:debug#bps[id]
-endfun
-
-fun! debug#toggleHere(temp)
-  let here = s:here()
-  return debug#toggleThere(here[0], here[1], a:temp)
-endfun
-
-fun! debug#toggleThere(file, lineNo, temp)
-  let bp = debug#there(a:file, a:lineNo)
-  if bp == g:debug#nobp
-    return s:putThere(a:file, a:lineNo, '', a:temp)
-  endif
-  return s:remove(bp)
-endfun
-
-fun! debug#getRecommends()
-  let here = s:here()
-  return here[0].' '.here[1].' 0'
+  return get(g:debug#bps, s:id(a:file, a:lineNo), g:debug#nobp)
 endfun
 
 fun! s:parseDebugBp(arg)
-  let t = split(a:arg, ' ') " also strips a:arg in the process
-  call s:putThere(t[0], t[1], join(t[3:]), t[2])
+  let items = debug#esplit(a:arg, ' ')
+  let ignored = []
+  let args = {}
+  let i = 0
+  while i < len(items) " parse into args
+    let item = items[i]
+    if item == 'at'
+      let i += 1
+      let args['at'] = s:parseAt(items[i])
+    elseif item == 'range'
+      let i += 2
+      let args['range'] = [s:parseAt(items[i-1]), s:parseAt(items[i])]
+    elseif item == 'temp'
+      let args['temp'] = 1
+    elseif item == 'if'
+      let i += 1
+      let args['if'] = items[i]
+    elseif item == 'enable'
+      let args['enable'] = 1
+    elseif item == 'disable'
+      let args['disable'] = 1
+    elseif item == 'ignore'
+      let i += 1
+      let args['ignore'] = str2nr(items[i])
+    else
+      call add(ignored, item)
+    endif
+    let i += 1
+  endwhile
+  let args['rm'] = !(has_key(args, 'temp') || has_key(args, 'if') || has_key(args, 'enable') || has_key(args, 'disable') || has_key(args, 'ignore')) " not perfect because not specifying temp could mean untempify this bp
+  if has_key(args, 'at')
+    let bp = debug#there(args.at[0], args.at[1])
+    if bp == g:debug#nobp
+      let bp = s:createBp(args.at[0], args.at[1], get(args, 'temp', 0), get(args, 'if', ''), !get(args, 'disable', 0))
+      call s:putBp(bp)
+      if has_key(args, 'ignore')
+	call s:setIgnore(bp, args.ignore)
+      endif
+      return
+    endif
+    return s:_parseDebugBp(bp, args)
+  elseif has_key(args, 'range')
+    let [a, b] = args.range " unpack from, to
+    let file = a[0] " get file path
+    let [x, y] = [a[1], b[1]] " unpack from line, to line
+    for bp in values(g:debug#bps)
+      if bp.file != file || bp.lineNo < x || y < bp.lineNo
+	continue
+      endif
+      call s:_parseDebugBp(bp, args)
+    endfor
+  endif
+  if len(ignored) != 0
+    echom 'ignored: '.ignored
+  endif
 endfun
 
-" file lineNo temp condition...
-command! -nargs=1 DebugBp call s:parseDebugBp(<q-args>)
+fun! s:_parseDebugBp(bp, args)
+  if a:args['rm']
+    call s:removeBp(a:bp)
+    return
+  endif
+  let if = get(a:args, 'if', a:bp.if)
+  let enabled = get(a:args, 'enable', !get(a:args, 'disable', !a:bp.enabled))
+  if get(a:args, 'temp', a:bp.temp) != a:bp.temp
+    call s:removeBp(a:bp)
+    call s:putBp(s:createBp(a:bp.file, a:bp.lineNo, a:args.temp, if, enabled))
+    return
+  endif
+  call s:changeBp(a:bp, if, enabled)
+  if has_key(a:args, 'ignore')
+    call s:setIgnore(a:bp, a:args.ignore)
+  endif
+endfun
+
+" main command for breakpoints
+command! -nargs=1 -range DebugBp call s:parseDebugBp(<q-args>)
+
 
 fun! debug#toggleEnabled(bp)
   if a:bp == g:debug#nobp
@@ -407,15 +552,6 @@ fun! debug#toggleEnabled(bp)
   endif
   return s:setEnabled(a:bp, 1 - a:bp.enabled)
 endfun
-
-fun! debug#setIgnore(bp, ignore)
-  if a:bp == g:debug#nobp
-    return 0
-  endif
-  return s:setIgnore(a:bp, a:ignore)
-endfun
-
-command! -nargs=* DebugBpIgnore call debug#setIgnore(debug#here(), str2nr(<q-args>))
 
 fun! debug#clearTemps()
   call s:clearTemps()
@@ -457,7 +593,7 @@ fun! debug#printWatch()
   call add(r, '],locals(),globals())')
   "call add(r, '])]); del __tryeval__')
   " WARN: command length might become an issue
-  return s:command(join(r, ''))
+  return s:cmd(join(r, ''))
 endfun
 
 "fun! debug#printWatch()
