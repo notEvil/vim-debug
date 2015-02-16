@@ -142,7 +142,7 @@ fun! s:parseAt(at)
   let file = items[0] == '' ? expand('%:p') : items[0]
   let lineNo = items[1]
   if 2 < l
-    let lineNo = s:findline(file, lineNo, items[1])
+    let lineNo = s:findline(file, lineNo, join(items[2:], ':'))
   endif
   return [file, lineNo]
 endfun
@@ -306,12 +306,12 @@ fun! s:stop(args)
   return r
 endfun
 
-fun! s:cmd(command)
+fun! s:cmd(cmd)
   let CmdF = g:debug#opts.cmdF
   if CmdF == s:nofu
     return s:funNotSet('cmdF')
   endif
-  return CmdF(a:command)
+  return CmdF(a:cmd)
 endfun
 
 fun! s:putBp(bp)
