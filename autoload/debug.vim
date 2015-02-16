@@ -140,7 +140,7 @@ fun! s:parseAt(at)
     echoerr 'syntax error, expected file:lineNo[:line]'
   endif
   let file = items[0] == '' ? expand('%:p') : items[0]
-  let lineNo = items[1]
+  let lineNo = str2nr(items[1])
   if 2 < l
     let lineNo = s:findline(file, lineNo, join(items[2:], ':'))
   endif
@@ -222,7 +222,7 @@ fun! s:deserialize(lines)
     if x == '0'
       let file = y
     elseif x == '1'
-      let bp = s:createBp(file, y, 0, '', 1)
+      let bp = s:createBp(file, str2nr(y), 0, '', 1)
     elseif x == '2'
       let bp.line = y
     elseif x == '3'
@@ -513,7 +513,7 @@ fun! s:parseDebugBp(arg)
     let file = a[0] " get file path
     let [x, y] = [a[1], b[1]] " unpack from line, to line
     for bp in values(g:debug#bps)
-      if bp.file != file || bp.lineNo < x || y < bp.lineNo
+      if (bp.file != file) || (bp.lineNo < x) || (y < bp.lineNo)
 	continue
       endif
       call s:_parseDebugBp(bp, args)

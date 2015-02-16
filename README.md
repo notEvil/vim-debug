@@ -34,7 +34,7 @@ Actually, it's no interactive console in the usual sense, but an insert mode key
 
 ## Demo
 
-TODO, a lot changed since the last demo
+See demo.mkv. I only forgot to show how to remove watch expressions using the `:DebugWatch` command. Anyway, I hope it's not too fast :)
 
 ## Getting Started
 
